@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -8,40 +9,32 @@ namespace UnlockMusicDotNet
 {
     class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             string currentPath = Directory.GetCurrentDirectory();
             var files = Directory.GetFiles(currentPath, ".", SearchOption.AllDirectories).Where(s => s.ToLower().EndsWith(".qmc3") || s.ToLower().EndsWith(".qmcflac") || s.ToLower().EndsWith(".qmcogg") || s.ToLower().EndsWith(".qmc0") || s.ToLower().EndsWith(".mflac"));
 
+            var tasks = new List<Task>();
             if (files.Count() > 0)
             {
-                using (ManualResetEvent manualResetEvent = new ManualResetEvent(false))
+                foreach (var file in files)
                 {
-                    int maxThreadCount = files.Count();
-                    foreach (var file in files)
+                    if(tasks.Count(s => s.Status == TaskStatus.Running) > 5)
                     {
-                        if (Path.GetExtension(file).Equals(".mflac", StringComparison.OrdinalIgnoreCase))
-                        {
-                            ThreadPool.QueueUserWorkItem(t =>
-                            {
-                                ProcessMflac(file);
-                                if (Interlocked.Decrement(ref maxThreadCount) == 0)
-                                    manualResetEvent.Set();
-                            });
-                        }
-                        else
-                        {
-                            ThreadPool.QueueUserWorkItem(t =>
-                            {
-                                ProcessAncient(file);
-                                if (Interlocked.Decrement(ref maxThreadCount) == 0)
-                                    manualResetEvent.Set();
-                            });
-                        }
+                        await Task.WhenAny(tasks);
                     }
 
-                    manualResetEvent.WaitOne();
+                    tasks.Add(Task.Run(() =>
+                    {
+                        if (Path.GetExtension(file).Equals(".mflac", StringComparison.OrdinalIgnoreCase))
+                            ProcessMflac(file);
+                        else
+                            ProcessAncient(file);
+                    }));
+
                 }
+
+                await Task.WhenAll(tasks);
                 Console.WriteLine("Finish");
             }
             else
